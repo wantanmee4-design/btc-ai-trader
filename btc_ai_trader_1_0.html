@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101827">
+<title>BTC AI Trader 1.0</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1220;--panel:#121d2e;--muted:#9aabc2;--line:#26364d;--green:#39c98a;--red:#ff6b75;--blue:#73a9ff}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#101b2c,#080e18);color:#edf3fc;font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:680px;margin:auto;padding:22px 16px 42px}
+header{display:flex;justify-content:space-between;align-items:center;margin:8px 0 20px}
+h1{font-size:20px;margin:0;letter-spacing:.4px}.tag{font-size:12px;padding:7px 10px;border-radius:20px;background:#153b32;color:#72e0b1}
+.panel{background:rgba(18,29,46,.96);border:1px solid var(--line);border-radius:18px;padding:17px;margin:12px 0;box-shadow:0 8px 24px #0002}
+.muted{color:var(--muted);font-size:13px}.price{font-size:32px;font-weight:750;margin:7px 0}.up{color:var(--green)}.down{color:var(--red)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metric{background:#0c1625;border-radius:13px;padding:13px}.metric b{display:block;font-size:20px;margin-top:7px}
+button{border:0;border-radius:12px;padding:13px 15px;font-size:15px;font-weight:650;color:#07111d;background:var(--blue);width:100%;margin-top:9px}
+button.secondary{background:#26364d;color:#e9f1ff}button.buy{background:#39c98a}button.sell{background:#ff7881}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.status{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line)}.status:last-child{border:0}
+.signal{font-size:22px;font-weight:750;margin:8px 0}.log{font-size:13px;padding:10px 0;border-bottom:1px solid var(--line)}.log:last-child{border:0}
+.small{font-size:12px;color:var(--muted);line-height:1.55}.foot{margin-top:18px;text-align:center}
+canvas{width:100%;height:130px;display:block}
+</style>
+</head>
+<body><main>
+<header><div><h1>BTC AI TRADER</h1><div class="muted">比特币模拟交易 · 1.0</div></div><span class="tag">模拟模式</span></header>
+<section class="panel">
+ <div class="muted">BTC / JPY 当前行情</div>
+ <div class="price" id="price">读取中…</div>
+ <div class="muted" id="marketNote">正在尝试读取公开行情</div>
+ <canvas id="chart" width="620" height="150"></canvas>
+ <button class="secondary" id="refresh">刷新行情</button>
+</section>
+<section class="grid">
+ <div class="metric"><span class="muted">模拟账户余额</span><b id="cash">¥10,000</b></div>
+ <div class="metric"><span class="muted">账户总资产</span><b id="equity">¥10,000</b></div>
+ <div class="metric"><span class="muted">持有 BTC</span><b id="btc">0.00000000</b></div>
+ <div class="metric"><span class="muted">累计盈亏</span><b id="pnl">¥0</b></div>
+</section>
+<section class="panel">
+ <div class="muted">AI 策略观察（演示版）</div>
+ <div class="signal" id="signal">等待行情数据</div>
+ <div class="small" id="reason">获取价格后，系统会根据简化的短期价格变化给出观察信号。此版本不是经过验证的盈利模型。</div>
+ <div class="status"><span class="muted">交易规则</span><b>只做现货模拟</b></div>
+ <div class="status"><span class="muted">真实交易</span><b class="up">关闭</b></div>
+</section>
+<section class="panel">
+ <b>模拟交易操作</b>
+ <div class="muted" style="margin-top:6px">每次按 ¥2,000 模拟买入；卖出全部持仓。默认不计手续费，结果仅供界面测试。</div>
+ <div class="actions"><button class="buy" id="buy">模拟买入 ¥2,000</button><button class="sell" id="sell">卖出全部 BTC</button></div>
+ <button class="secondary" id="reset">重置模拟账户</button>
+</section>
+<section class="panel">
+ <div style="display:flex;justify-content:space-between"><b>交易记录</b><span class="muted" id="count">0 笔</span></div>
+ <div id="history" class="muted" style="margin-top:10px">暂无交易记录</div>
+</section>
+<p class="small foot">重要：这是本机浏览器中的演示原型。行情接口可能因网络或跨域限制无法读取；模拟账户数据保存在当前浏览器。关闭页面后不会在后台自动运行，也不会自动下单。非投资建议。</p>
+</main>
+<script>
+let cash=10000, btc=0, price=null, entry=0, history=[], prices=[];
+const yen=n=>'¥'+Math.round(n).toLocaleString('ja-JP');
+const el=id=>document.getElementById(id);
+function render(){
+ el('cash').textContent=yen(cash); el('btc').textContent=btc.toFixed(8);
+ const value=btc*(price||entry||0), equity=cash+value, pnl=equity-10000;
+ el('equity').textContent=yen(equity);el('pnl').textContent=(pnl>=0?'+':'')+yen(pnl);
+ el('pnl').className=pnl>=0?'up':'down';
+ el('count').textContent=history.length+' 笔';
+ el('history').innerHTML=history.length?history.slice().reverse().map(x=>`<div class="log"><b>${x.side}</b>　${x.qty.toFixed(8)} BTC<br><span class="muted">${yen(x.price)} · ${x.time}</span></div>`).join(''):'暂无交易记录';
+ draw();
+}
+function draw(){const c=el('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);if(prices.length<2){ctx.fillStyle='#9aabc2';ctx.font='14px sans-serif';ctx.fillText('行情曲线将在成功获取数据后显示',12,70);return}
+ let lo=Math.min(...prices),hi=Math.max(...prices);if(hi===lo)hi=lo+1;ctx.strokeStyle='#39c98a';ctx.lineWidth=3;ctx.beginPath();prices.forEach((p,i)=>{let x=i*w/(prices.length-1),y=h-12-(p-lo)/(hi-lo)*(h-24);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();}
+async function refresh(){
+ el('marketNote').textContent='正在连接 bitbank 公共行情…';
+ try{
+  const r=await fetch('https://public.bitbank.cc/btc_jpy/ticker');if(!r.ok)throw Error('HTTP '+r.status);
+  const j=await r.json();price=Number(j.data.last);if(!Number.isFinite(price))throw Error('行情数据格式异常');
+  prices.push(price);if(prices.length>36)prices.shift();
+  el('price').textContent=yen(price);el('marketNote').textContent='公开行情读取成功 · '+new Date().toLocaleTimeString('ja-JP');
+  analyze();render();
+ }catch(e){el('marketNote').textContent='暂时无法读取实时行情：'+e.message+'。可稍后重试。';el('price').textContent=price?yen(price):'暂不可用';}
+}
+function analyze(){
+ if(prices.length<6){el('signal').textContent='继续观察';el('reason').textContent='样本不足，至少收集6次行情后再显示简化信号。';return}
+ const recent=prices.slice(-6),avg=recent.reduce((a,b)=>a+b,0)/recent.length,change=(recent.at(-1)-recent[0])/recent[0];
+ if(change>0.002&&price>avg){el('signal').textContent='偏多观察';el('signal').className='signal up';el('reason').textContent='最近采样价格偏强；这只是简单规则提示，不构成买入建议。'}
+ else if(change<-.002&&price<avg){el('signal').textContent='偏弱观察';el('signal').className='signal down';el('reason').textContent='最近采样价格偏弱；注意波动风险，不自动卖出。'}
+ else{el('signal').textContent='观望';el('signal').className='signal';el('reason').textContent='短期方向不明确，暂不产生操作倾向。'}
+}
+el('buy').onclick=()=>{if(!price)return alert('请先成功获取行情');let spend=Math.min(2000,cash);if(spend<100)return alert('模拟余额不足');let q=spend/price;cash-=spend;btc+=q;entry=price;history.push({side:'买入',qty:q,price,time:new Date().toLocaleString('ja-JP')});render()};
+el('sell').onclick=()=>{if(!price||btc<=0)return alert('目前没有可卖出的模拟持仓');let q=btc;cash+=q*price;btc=0;history.push({side:'卖出',qty:q,price,time:new Date().toLocaleString('ja-JP')});render()};
+el('reset').onclick=()=>{if(!confirm('确定重置余额和全部模拟记录？'))return;cash=10000;btc=0;entry=0;history=[];render()};
+el('refresh').onclick=refresh;render();refresh();setInterval(refresh,60000);
+</script></body></html>
